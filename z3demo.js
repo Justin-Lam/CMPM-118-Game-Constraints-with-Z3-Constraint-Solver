@@ -2,44 +2,83 @@ import { init } from 'z3-solver';
 const { Context } = await init();
 const { Solver, Int, And, Or, Distinct } = new Context("main");
 
-//solveExample();
-//solveChildrenAndPetsPuzzle();   
-solveInsideFence();
-//solveOnFence();
-//solveOutsideFence();
+const MAX_VIABLE_SOLUTIONS = 100;
+ 
+await solveExample();
+await solveChildrenAndPetsPuzzle();
+await solveInsideFence();
+await solveOnFence();
+await solveOutsideFence();
 
-async function solve(constraints, maxNumSolutions) {
+/**
+ * Finds the set of solutions for a constraint problem and returns a random solution from the set.
+ * @param {Int.const[]} variables an array of Z3 solver Int.const variables
+ * @param {[]} constraints an array of Z3 solver constraints (ex. And, Or)
+ * @param {number} solutionLimit the limit for the number of solutions to find if the total number is really large or infinite
+ * @returns {number[]} a solution represented as an array of numbers, where each element is the solution value for the corresponding variable
+ */
+async function getRandomSolution(variables, constraints, solutionLimit) {
+
 	// Initialize solver
 	const solver = new Solver();
 	constraints.forEach(constraint => solver.add(constraint));
 
+	// Initialize solutions
+	const solutions = [];
 
+	// Get solutions
+	let solverRes = await solver.check();
+	while (solverRes === "sat" && solutions.length < solutionLimit) {
+
+		// Get a new viable solution and add it to solutions
+		const model = solver.model();
+		const solution = [];
+		variables.forEach(variable => solution.push(model.eval(variable)));
+		solutions.push(solution);
+
+		// Make the found solution no longer viable
+		// constraint represents: "next time try to solve for a new solution you haven't solved for already"
+		// constraint is only false when the solver chooses an solution that's already been discovered as viable
+		// array.map() returns an array
+		// the spread operator (...) makes it so instead of passing in an array of elements, we pass in the array's elements
+		const clauses = variables.map((variable, i) => variable.neq(solution[i]));
+		const constraint = Or(...clauses);
+		solver.add(constraint);
+
+		// Try to get a new viable solution
+		solverRes = await solver.check();
+	}
+
+	// Return random solution
+	console.log(solutions.length + " solution(s)");
+	// sat
+	if (solutions.length > 0) {
+		const randIndex = Math.floor(Math.random() * solutions.length);
+		return solutions[randIndex];
+	}
+	// unsat
+	else {
+		return [];
+	}
+	
 }
+
 async function solveExample()
 {
-	const solver = new Solver();
+	console.log("EXAMPLE: ")
 
-	const x = Int.const('x');  // x is a Z3 integer
-	solver.add(And(x.le(10), x.ge(9)));  // x <= 10, x >=9
-	
-	// Run Z3 solver, find solution and sat/unsat
-	
-	if (await solver.check() === "sat") {
-	
-		// Extract value for x
-		let model = solver.model();
-		let xVal = parseInt(model.eval(x).toString());
-		console.log(`sat. A valid value for x is: ${xVal}`);
-	
-	} else {
-	
-		console.log("unsat. Could not find a valid value for x.");
-	
-	}
+	const x = Int.const('x');
+	const variables = [x];
+
+	const constraint = And(x.le(10), x.ge(9));
+	const constraints = [constraint];
+
+	const randSolution = await getRandomSolution(variables, constraints, MAX_VIABLE_SOLUTIONS);
+	console.log(randSolution.toString());
 }
 async function solveChildrenAndPetsPuzzle()
 {
-	const solver = new Solver();
+	console.log("CHILDREN & PETS: ");
 
 	const cat = 1;
 	const dog = 2;
@@ -49,62 +88,34 @@ async function solveChildrenAndPetsPuzzle()
 	const mary = Int.const("mary");
 	const cathy = Int.const("cathy");
 	const sue = Int.const("sue");
+	const variables = [bob, mary, cathy, sue];
+
+	const constraints = [];
 	
 	// Everyone has a cat, dog, bird, or fish
-	solver.add(And(bob.ge(cat), bob.le(fish)));
-	solver.add(And(mary.ge(cat), mary.le(fish)));
-	solver.add(And(cathy.ge(cat), cathy.le(fish)));
-	solver.add(And(sue.ge(cat), sue.le(fish)));
+	constraints.push(And(bob.ge(cat), bob.le(fish)));
+	constraints.push(And(mary.ge(cat), mary.le(fish)));
+	constraints.push(And(cathy.ge(cat), cathy.le(fish)));
+	constraints.push(And(sue.ge(cat), sue.le(fish)));
 	
 	// Everyone has a different pet
-	solver.add(Distinct(bob, mary, cathy, sue));
+	constraints.push(Distinct(bob, mary, cathy, sue));
 	
 	// Bob has a dog
-	solver.add(bob.eq(dog));
+	constraints.push(bob.eq(dog));
 	
 	// Sue has a pet with two legs (bird)
-	solver.add(sue.eq(bird));
+	constraints.push(sue.eq(bird));
 	
 	// Mary does not have a fish
-	solver.add(mary.neq(fish));
-	
-	// Run Z3 solver, find solution and sat/unsat
-	const satRes = await solver.check();
-	console.log("CHILDREN & PETS:");
-	console.log(satRes);
-	
-	// Extract results for everyone
-	const model = solver.model();
-	console.log(`Bob = ${numToPet(model.eval(bob))}`);
-	console.log(`Mary = ${numToPet(model.eval(mary))}`);
-	console.log(`Cathy = ${numToPet(model.eval(cathy))}`);
-	console.log(`Sue = ${numToPet(model.eval(sue))}`);
-	
-	function numToPet(num)
-	{
-		if (num == cat) {
-			return "Cat";
-		}
-		else if (num == dog) {
-			return "Dog";
-		}
-		else if (num == bird) {
-			return "Bird";
-		}
-		else if (num == fish) {
-			return "Fish";
-		}
-		else {
-			return "Other";
-		}
-	}
+	constraints.push(mary.neq(fish));
+
+	const randSolution = await getRandomSolution(variables, constraints, MAX_VIABLE_SOLUTIONS);
+	console.log(randSolution.toString());
 }
 async function solveInsideFence()
 {
 	console.log("INSIDE FENCE:");
-
-	// Solver
-	const solver = new Solver();
 
 	// Fence Constants
 	const leftFenceX = 5;
@@ -115,46 +126,19 @@ async function solveInsideFence()
 	// Object Variables
 	const objX = Int.const("objX");    // the x pos of the obj to be placed
 	const objY = Int.const("objY");    // the y pos of the obj to be placed
+	const variables = [objX, objY];
 
 	// Constraints
 	const objBetweenLeftAndRightFence = And(objX.gt(leftFenceX), objX.lt(rightFenceX));
 	const objBetweenTopAndBottomFence = And(objY.lt(bottomFenceY), objY.gt(topFenceY));
-	solver.add(objBetweenLeftAndRightFence);
-	solver.add(objBetweenTopAndBottomFence);
+	const constraints = [objBetweenLeftAndRightFence, objBetweenTopAndBottomFence];
 
-	// Answer Set
-	const viableObjPositions = [];
-
-	// Get answer set
-	let satResult = await solver.check();
-	while (satResult === "sat") {
-
-		const model = solver.model();
-		const xResult = model.eval(objX);
-		const yResult = model.eval(objY);
-
-		viableObjPositions.push({
-			x: xResult,
-			y: yResult
-		});
-
-		// constraint represents: "next time try to solve for a new position you haven't solved for already"
-		// constraint is only false when the solver chooses an (x, y) pair that's already been discovered as viable
-		const constraint = Or(objX.neq(xResult), objY.neq(yResult));
-		solver.add(constraint);
-
-		satResult = await solver.check();
-	}
-
-	// Display results
-	console.log(`${viableObjPositions.length} viable positions`);
-	let positions = "";
-	viableObjPositions.forEach(pos => positions += `(${pos.x}, ${pos.y}), `);
-	console.log(positions);
+	const randSolution = await getRandomSolution(variables, constraints, MAX_VIABLE_SOLUTIONS);
+	console.log(randSolution.toString());
 }
 async function solveOnFence()
 {
-	const solver = new Solver();
+	console.log("ON FENCE: ");
 
 	const leftFenceX = 5;
 	const rightFenceX = 10;
@@ -163,26 +147,21 @@ async function solveOnFence()
 
 	const x = Int.const("x");
 	const y = Int.const("y");
+	const variables = [x, y];
 
-	solver.add(Or(x.eq(leftFenceX), y.eq(topFenceY)));
-	solver.add(Or(x.neq(leftFenceX), y.neq(topFenceY)));
-	solver.add(And(x.ge(leftFenceX), x.le(rightFenceX)));
-	solver.add(And(y.ge(topFenceY), y.le(bottomFenceY)));
+	const constraints =  [
+		Or(x.eq(leftFenceX), y.eq(topFenceY)),
+		Or(x.neq(leftFenceX), y.neq(topFenceY)),
+		And(x.ge(leftFenceX), x.le(rightFenceX)),
+		And(y.ge(topFenceY), y.le(bottomFenceY))
+	];
 
-	// Run Z3 solver, find solution and sat/unsat
-	const satRes = await solver.check();
-	console.log("ON FENCE:");
-	console.log(satRes);
-
-	// Extract values
-	const model = solver.model();
-	const xRes = model.eval(x);
-	const yRes = model.eval(y);
-	console.log(`(x, y) = (${xRes}, ${yRes})`);
+	const randSolution = await getRandomSolution(variables, constraints, MAX_VIABLE_SOLUTIONS);
+	console.log(randSolution.toString());
 }
 async function solveOutsideFence()
 {
-	const solver = new Solver();
+	console.log("OUTSIDE FENCE: ");
 
 	const minX = 8;
 	const minY = 20;
@@ -193,20 +172,25 @@ async function solveOutsideFence()
 
 	const x = Int.const("x");
 	const y = Int.const("y");
+	const variables = [x, y];
 
-	solver.add(x.ge(minX));
-	solver.add(y.ge(minY));
-	solver.add(Or(x.lt(leftFenceX), x.gt(rightFenceX)));
-	solver.add(Or(y.lt(topFenceY), y.gt(bottomFenceY)));
+	const constraints = [
+		x.ge(minX),
+		y.ge(minY),
+		Or(
+			And(
+				x.ge(leftFenceX),
+				x.le(rightFenceX),
+				y.gt(bottomFenceY)
+			),
+			And(
+				y.ge(topFenceY),
+				y.le(bottomFenceY),
+				x.gt(rightFenceX)
+			)
+		)
+	];
 
-	// Run Z3 solver, find solution and sat/unsat
-	const satRes = await solver.check();
-	console.log("OUTSIDE FENCE:");
-	console.log(satRes);
-
-	// Extract values
-	const model = solver.model();
-	const xRes = model.eval(x);
-	const yRes = model.eval(y);
-	console.log(`(x, y) = (${xRes}, ${yRes})`);
+	const randSolution = await getRandomSolution(variables, constraints, MAX_VIABLE_SOLUTIONS);
+	console.log(randSolution.toString());
 }
